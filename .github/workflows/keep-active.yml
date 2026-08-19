@@ -1,0 +1,47 @@
+name: Keep Active
+
+# Runs weekly, but only actually commits roughly every 4 weeks (see the
+# cadence check below). This keeps the repo/account showing real, dated
+# activity indefinitely without any manual work.
+
+on:
+  schedule:
+    - cron: "23 15 * * 1" # Mondays ~15:23 UTC
+  workflow_dispatch: {}
+
+permissions:
+  contents: write
+
+jobs:
+  update:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Check cadence and update log
+        id: check
+        run: |
+          set -e
+          LAST=$(cat .github/last_update.txt 2>/dev/null || echo "1970-01-01")
+          LAST_EPOCH=$(date -d "$LAST" +%s)
+          NOW_EPOCH=$(date -u +%s)
+          DAYS=$(( (NOW_EPOCH - LAST_EPOCH) / 86400 ))
+          echo "Days since last automated update: $DAYS"
+          if [ "$DAYS" -lt 28 ]; then
+            echo "Fewer than 28 days since last update; nothing to do."
+            echo "should_update=false" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          TODAY=$(date -u +%Y-%m-%d)
+          echo "$TODAY" > .github/last_update.txt
+          echo "- ${TODAY}: automated keep-active update (${DAYS} days since previous)" >> CHANGELOG.md
+          echo "should_update=true" >> "$GITHUB_OUTPUT"
+
+      - name: Commit and push
+        if: steps.check.outputs.should_update == 'true'
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add CHANGELOG.md .github/last_update.txt
+          git commit -m "Automated 4-week keep-active update"
+          git push
